@@ -1,36 +1,36 @@
 """
 =============================================================================
-Система геймифицированной эмоциональной поддержки «Хвалебный бот»
-(PraiseMe Inc. — Лабораторные работы № 1, 2, 3)
+"PraiseMe" gamified emotional support bot ("Хвалебный бот")
+(PraiseMe Inc. — Lab works No. 1, 2, 3)
 =============================================================================
-В этом одном файле реализованы:
-1. БД из 6 таблиц (SQLite в 1 файл, не требует установки сервера БД):
+This single file implements:
+1. A database with 6 tables (SQLite, a single file, no DB server required):
    Characters, Phrases, Users, Deeds, Certificates, Crisis_Logs.
-2. Подсистема Клиента (US-1 — US-7):
-   - Прием бытовых дел и мгновенная похвала голосом персонажа.
-   - Смена персонажа («Бабушка» / «Дарт Вейдер») в 1 клик.
-   - Генерация именного PDF-сертификата с поддержкой русского языка.
-   - Опрос состояния по шкале 1–10 (по расписанию и по кнопке) + реакция на 9–10.
-   - Генерация PNG-графика динамики и недельного отчета.
-   - Полное удаление своих данных (право на забвение, п. 4.2 ТЗ).
-3. Подсистема Администратора (US-8 — US-10):
-   - Обезличенная статистика (без доступа к личным оценкам кризиса).
-   - Блокировка и разблокировка пользователей по Telegram ID.
-   - Выгрузка системного журнала событий и ошибок (bot_events.log).
-4. Подсистема Мастера / Основателя-психолога (US-11 — US-13):
-   - Добавление и отключение фраз персонажей без изменения кода.
-   - Настройка времени ежедневного опроса и текста помощи при уровнях 9–10.
-   - Анонимная сводная аналитика кризисов для отчета перед инвесторами.
+2. Client subsystem (US-1 — US-7):
+   - Accepting everyday deeds and instant praise in the character's voice.
+   - Switching the character ("Grandmother" / "Darth Vader") in one tap.
+   - Generating a personalized PDF certificate with Russian language support.
+   - State survey on a 1-10 scale (on schedule and on demand) + reaction to 9-10.
+   - Generating a PNG dynamics chart and a weekly report.
+   - Full deletion of the user's own data (right to be forgotten, spec section 4.2).
+3. Administrator subsystem (US-8 — US-10):
+   - Anonymized statistics (no access to personal crisis scores).
+   - Blocking and unblocking users by Telegram ID.
+   - Exporting the system event and error log (bot_events.log).
+4. Master / Founder-psychologist subsystem (US-11 — US-13):
+   - Adding and disabling character phrases without changing the code.
+   - Configuring the daily survey time and the help text shown at levels 9-10.
+   - Anonymous summary crisis analytics for the investor report.
 
-ИНСТРУКЦИЯ ПО ЗАПУСКУ:
-1. Установите библиотеки одной командой в терминале:
-   pip install aiogram matplotlib apscheduler
-2. Вставьте ваш токен от @BotFather в переменную BOT_TOKEN ниже (строка 51)
-   либо просто запустите скрипт — он сам спросит токен в консоли.
-3. Запустите бота:
-   python praise_bot.py
-4. Чтобы протестировать панели Мастера и Администратора со своего аккаунта,
-   отправьте боту команду /demo_role (она позволяет переключать вашу роль).
+HOW TO RUN:
+1. Install the libraries with one command:
+   pip install aiogram matplotlib apscheduler python-dotenv
+2. Create a .env file next to this script and put your @BotFather token there:
+   BOT_TOKEN=your_token_here
+3. Start the bot:
+   python telegram.py
+4. To test the Master and Administrator panels from your own account,
+   send the bot the /demo_role command (it lets you switch your role).
 =============================================================================
 """
 
@@ -44,7 +44,7 @@ import sys
 import uuid
 from datetime import datetime, timedelta
 
-# Настройка matplotlib для работы на сервере без монитора (Генерация PDF и PNG)
+# Configure matplotlib to work on a headless server (PDF and PNG generation)
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -69,23 +69,23 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import os
 from dotenv import load_dotenv
 
-# Загружаем переменные окружения из файла .env
+# Load environment variables from the .env file
 load_dotenv()
 
-# Получаем токен
+# Get the bot token
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 
 
-# Список Telegram ID администраторов и мастеров по умолчанию (можно оставить пустым
-# и включить себе права прямо в боте командой /demo_role)
+# Default Telegram IDs of administrators and masters (can be left empty
+# and the rights can be granted in the bot itself with the /demo_role command)
 ADMIN_IDS: list[int] = []
 MASTER_IDS: list[int] = []
 
 DB_PATH = "praise_bot.db"
 LOG_PATH = "bot_events.log"
 
-# Настройка журналирования событий и ошибок (US-10)
+# Configure logging of events and errors (US-10)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -98,7 +98,7 @@ logger = logging.getLogger("PraiseMeBot")
 
 
 # =============================================================================
-# 2. СЛОЙ БАЗЫ ДАННЫХ (6 СУЩНОСТЕЙ ИЗ ER-ДИАГРАММЫ ЛР № 3 + НАСТРОЙКИ)
+# 2. DATABASE LAYER (6 ENTITIES FROM THE ER DIAGRAM OF LAB No. 3 + SETTINGS)
 # =============================================================================
 
 def get_db_connection() -> sqlite3.Connection:
@@ -109,11 +109,11 @@ def get_db_connection() -> sqlite3.Connection:
 
 
 def init_db() -> None:
-    """Создает 6 таблиц по ER-диаграмме и заполняет стартовыми данными."""
+    """Creates the 6 tables from the ER diagram and fills them with starting data."""
     with get_db_connection() as conn:
         cursor = conn.cursor()
 
-        # Таблица 1: Characters (Персонажи)
+        # Table 1: Characters
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS Characters (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -122,7 +122,7 @@ def init_db() -> None:
             );
         """)
 
-        # Таблица 2: Phrases (Шаблоны фраз похвалы)
+        # Table 2: Phrases (praise phrase templates)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS Phrases (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -133,7 +133,7 @@ def init_db() -> None:
             );
         """)
 
-        # Таблица 3: Users (Обезличенные пользователи — без ФИО согласно п. 4.2 ТЗ)
+        # Table 3: Users (anonymized users — no full names, per spec section 4.2)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS Users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -147,7 +147,7 @@ def init_db() -> None:
             );
         """)
 
-        # Таблица 4: Deeds (Выполненные бытовые дела)
+        # Table 4: Deeds (completed everyday deeds)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS Deeds (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -160,7 +160,7 @@ def init_db() -> None:
             );
         """)
 
-        # Таблица 5: Certificates (Реестр выданных PDF-сертификатов)
+        # Table 5: Certificates (registry of issued PDF certificates)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS Certificates (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -171,7 +171,7 @@ def init_db() -> None:
             );
         """)
 
-        # Таблица 6: Crisis_Logs (Журнал трекера состояния 1–10)
+        # Table 6: Crisis_Logs (state tracker log, scale 1-10)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS Crisis_Logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -183,7 +183,7 @@ def init_db() -> None:
             );
         """)
 
-        # Служебная таблица настроек Мастера (время опроса и кризисный текст 9-10)
+        # Service table of Master settings (survey time and crisis text for 9-10)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS Settings (
                 key TEXT PRIMARY KEY,
@@ -191,7 +191,7 @@ def init_db() -> None:
             );
         """)
 
-        # Заполнение персонажей по умолчанию
+        # Fill in the default characters
         cursor.execute("SELECT COUNT(*) as cnt FROM Characters;")
         if cursor.fetchone()["cnt"] == 0:
             cursor.executemany(
@@ -202,16 +202,16 @@ def init_db() -> None:
                 ],
             )
 
-        # Заполнение стартовых шаблонов фраз (с плейсхолдером {deed})
+        # Fill in the starting phrase templates (with the {deed} placeholder)
         cursor.execute("SELECT COUNT(*) as cnt FROM Phrases;")
         if cursor.fetchone()["cnt"] == 0:
             initial_phrases = [
-                # Фразы Бабушки (character_id = 1)
+                # Grandmother phrases (character_id = 1)
                 (1, "Золотце моё, как же ты славно справился с делом «{deed}»! Я тобой так горжусь, иди обниму и налью чаю с малиной!"),
                 (1, "Солнышко, сделать «{deed}» — это настоящий подвиг! Ты у меня самый трудолюбивый, возьми тёплый пирожок с полки!"),
                 (1, "Родной мой человек, даже маленькое дело «{deed}» делает день светлее. Отдохни немного, ты это заслужил!"),
                 (1, "Умница моя! Пока другие ленятся, ты берёшь и делаешь «{deed}». Бабушка всегда в тебя верила!"),
-                # Фразы Дарта Вейдера (character_id = 2)
+                # Darth Vader phrases (character_id = 2)
                 (2, "Твоя мощь в деле «{deed}» впечатляет. Даже Император отметил твою дисциплину. Сила определенно течет в тебе!"),
                 (2, "Я ощущаю великое возмущение в рутине: ты сокрушил задачу «{deed}» точнее, чем Звезда Смерти! Империя гордится тобой."),
                 (2, "Недооценивать важность миссии «{deed}» было бы ошибкой. Ты блестяще доказал своё превосходство над хаосом и прокрастинацией!"),
@@ -222,7 +222,7 @@ def init_db() -> None:
                 initial_phrases,
             )
 
-        # Настройки по умолчанию для Мастера-психолога
+        # Default settings for the Master-psychologist
         default_crisis_msg = (
             "💛 <b>Мы видим, что сейчас вам очень непросто (уровень {score}/10).</b>\n\n"
             "Пожалуйста, помните: вы не обязаны справляться с этим в одиночку, "
@@ -244,7 +244,7 @@ def init_db() -> None:
     logger.info("База данных успешно инициализирована (6 таблиц ER-схемы готовы).")
 
 
-# Вспомогательные функции работы с БД
+# Database helper functions
 def get_or_create_user(telegram_id: int, username: str | None) -> sqlite3.Row:
     nickname = f"@{username}" if username else f"Герой #{str(telegram_id)[-4:]}"
     default_role = "client"
@@ -291,7 +291,7 @@ def set_setting(key: str, value: str) -> None:
 
 
 # =============================================================================
-# 3. ГЕНЕРАТОР ИМЕННЫХ PDF-СЕРТИФИКАТОВ И PNG-ГРАФИКОВ (БЕЗ ПРОБЛЕМ С КИРИЛЛИЦЕЙ)
+# 3. GENERATOR OF PERSONALIZED PDF CERTIFICATES AND PNG CHARTS (NO CYRILLIC ISSUES)
 # =============================================================================
 
 def generate_pdf_certificate(
@@ -303,8 +303,8 @@ def generate_pdf_certificate(
     issued_at: str,
 ) -> bytes:
     """
-    Генерирует красивый PDF-сертификат достижения в формате А4 альбомной ориентации.
-    Использует векторный рендеринг Matplotlib PDF backend (полная поддержка кириллицы).
+    Generates a nice PDF achievement certificate in A4 landscape format.
+    Uses vector rendering of the Matplotlib PDF backend (full Cyrillic support).
     """
     plt.rcParams["font.sans-serif"] = ["DejaVu Sans", "Arial", "Segoe UI", "Tahoma"]
     plt.rcParams["axes.unicode_minus"] = False
@@ -315,27 +315,27 @@ def generate_pdf_certificate(
     ax.set_ylim(0, 100)
     ax.axis("off")
 
-    # Цветовая схема в зависимости от выбранного персонажа
+    # Color scheme depending on the selected character
     if character_name == "Бабушка":
-        bg_color = "#FFFBEB"       # Теплый кремовый
-        border_main = "#D97706"    # Янтарно-золотой
+        bg_color = "#FFFBEB"       # Warm cream
+        border_main = "#D97706"    # Amber gold
         border_inner = "#F59E0B"
         title_color = "#78350F"
         accent_color = "#B45309"
         badge_title = "ОРДЕН БАБУШКИНОЙ ГОРДОСТИ И ТЕПЛЫХ ПИРОЖКОВ"
     else:
-        bg_color = "#0F172A"       # Глубокий космический темный
-        border_main = "#DC2626"    # Ситхский красный
+        bg_color = "#0F172A"       # Deep space dark
+        border_main = "#DC2626"    # Sith red
         border_inner = "#475569"
         title_color = "#F8FAFC"
         accent_color = "#EF4444"
         badge_title = "ВЫСШИЙ ИМПЕРСКИЙ ДЕКРЕТ СИЛЫ"
 
-    # Заливка фона
+    # Fill the background
     fig.patch.set_facecolor(bg_color)
     ax.add_patch(plt.Rectangle((0, 0), 100, 100, facecolor=bg_color))
 
-    # Декоративные рамки сертификата
+    # Decorative certificate borders
     outer_box = FancyBboxPatch(
         (4, 5), 92, 90,
         boxstyle="round,pad=0.6,rounding_size=2.0",
@@ -349,7 +349,7 @@ def generate_pdf_certificate(
     ax.add_patch(outer_box)
     ax.add_patch(inner_box)
 
-    # Шапка сертификата
+    # Certificate header
     ax.text(
         50, 86, "ПСИХОЛОГИЧЕСКИЙ СТАРТАП «PRAISEME INC.» • ХВАЛЕБНЫЙ БОТ",
         ha="center", va="center", fontsize=11, fontweight="bold", color=accent_color
@@ -363,7 +363,7 @@ def generate_pdf_certificate(
         ha="center", va="center", fontsize=12, fontweight="bold", color=accent_color
     )
 
-    # Кому выдан
+    # Who the certificate is issued to
     ax.text(
         50, 62, "Настоящим документом официально подтверждается, что",
         ha="center", va="center", fontsize=13, color=title_color
@@ -373,7 +373,7 @@ def generate_pdf_certificate(
         ha="center", va="center", fontsize=22, fontweight="bold", color=accent_color
     )
 
-    # За какое дело
+    # What the certificate is for
     short_deed = deed_title if len(deed_title) <= 65 else deed_title[:62] + "..."
     ax.text(
         50, 45, "блестяще преодолел(а) бытовую рутину и выполнил(а) дело:",
@@ -384,7 +384,7 @@ def generate_pdf_certificate(
         ha="center", va="center", fontsize=18, fontweight="bold", color=title_color
     )
 
-    # Текст похвалы персонажа (с переносом по словам)
+    # The character's praise text (word-wrapped)
     words = praise_text.split()
     lines, current_line = [], ""
     for w in words:
@@ -402,7 +402,7 @@ def generate_pdf_certificate(
         ha="center", va="center", fontsize=11.5, style="italic", color=title_color
     )
 
-    # Подвал сертификата: номер, дата, персонаж
+    # Certificate footer: number, date, character
     ax.plot([12, 88], [16, 16], color=border_inner, lw=1.2)
     ax.text(
         12, 11.5, f"Регистрационный номер: {cert_number}",
@@ -426,7 +426,7 @@ def generate_pdf_certificate(
 
 def generate_crisis_chart_png(logs: list[sqlite3.Row], nickname: str) -> bytes:
     """
-    Строит PNG-график динамики эмоционального состояния пользователя (US-5).
+    Builds a PNG chart of the user's emotional state dynamics (US-5).
     """
     plt.rcParams["font.sans-serif"] = ["DejaVu Sans", "Arial", "Segoe UI"]
     plt.rcParams["axes.unicode_minus"] = False
@@ -438,7 +438,7 @@ def generate_crisis_chart_png(logs: list[sqlite3.Row], nickname: str) -> bytes:
     fig.patch.set_facecolor("#F8FAFC")
     ax.set_facecolor("#FFFFFF")
 
-    # Цветовые зоны (зеленая 1-4, желтая 5-8, красная кризисная 9-10)
+    # Color zones (green 1-4, yellow 5-8, red crisis 9-10)
     ax.axhspan(1, 4.5, color="#DCFCE7", alpha=0.55, label="Спокойное состояние (1–4)")
     ax.axhspan(4.5, 8.5, color="#FEF9C3", alpha=0.55, label="Накопление усталости (5–8)")
     ax.axhspan(8.5, 10.3, color="#FEE2E2", alpha=0.65, label="Острый кризис / выгорание (9–10)")
@@ -480,7 +480,7 @@ def generate_crisis_chart_png(logs: list[sqlite3.Row], nickname: str) -> bytes:
 
 
 # =============================================================================
-# 4. КЛАВИАТУРЫ И СОСТОЯНИЯ (FSM) — ВСЕ ДЕЙСТВИЯ ДОСТУПНЫ ЗА <= 2 НАЖАТИЯ (П. 4.3 ТЗ)
+# 4. KEYBOARDS AND STATES (FSM) — ALL ACTIONS ARE AVAILABLE IN <= 2 TAPS (SPEC SECTION 4.3)
 # =============================================================================
 
 class BotStates(StatesGroup):
@@ -531,7 +531,7 @@ def get_character_inline_kb(current_char_id: int) -> InlineKeyboardMarkup:
 
 
 def get_survey_inline_kb() -> InlineKeyboardMarkup:
-    """Клавиатура ежедневного опроса состояния от 1 до 10 одной кнопкой (US-4)."""
+    """Keyboard for the daily state survey from 1 to 10, one tap per answer (US-4)."""
     row1 = [
         InlineKeyboardButton(text=str(i), callback_data=f"crisis_score:{i}")
         for i in range(1, 6)
@@ -544,7 +544,7 @@ def get_survey_inline_kb() -> InlineKeyboardMarkup:
 
 
 # =============================================================================
-# 5. ОБРАБОТЧИКИ КОМАНД И СЦЕНАРИЕВ (ROUTER)
+# 5. COMMAND AND SCENARIO HANDLERS (ROUTER)
 # =============================================================================
 
 router = Router()
@@ -607,7 +607,7 @@ async def cmd_help(message: Message) -> None:
 
 
 # -----------------------------------------------------------------------------
-# ПЕРЕКЛЮЧАТЕЛЬ РОЛЕЙ ДЛЯ ЗАЩИТЫ ЛАБОРАТОРНОЙ РАБОТЫ (/demo_role)
+# ROLE SWITCHER FOR THE LAB DEFENSE (/demo_role)
 # -----------------------------------------------------------------------------
 @router.message(Command("demo_role"))
 async def cmd_demo_role(message: Message) -> None:
@@ -647,7 +647,7 @@ async def cb_set_role(callback: CallbackQuery) -> None:
 
 
 # -----------------------------------------------------------------------------
-# US-2: ВЫБОР И СМЕНА ПЕРСОНАЖА («БАБУШКА» / «ДАРТ ВЕЙДЕР»)
+# US-2: CHARACTER SELECTION AND SWITCHING ("GRANDMOTHER" / "DARTH VADER")
 # -----------------------------------------------------------------------------
 @router.message(F.text == "🎭 Сменить персонажа")
 async def menu_change_character(message: Message) -> None:
@@ -686,7 +686,7 @@ async def cb_set_character(callback: CallbackQuery) -> None:
 
 
 # -----------------------------------------------------------------------------
-# СМЕНА ПСЕВДОНИМА ДЛЯ СЕРТИФИКАТОВ (БЕЗ ХРАНЕНИЯ ФИО — П. 4.2 ТЗ)
+# CHANGING THE NICKNAME FOR CERTIFICATES (NO FULL NAMES STORED — SPEC SECTION 4.2)
 # -----------------------------------------------------------------------------
 @router.message(F.text == "✏️ Сменить псевдоним")
 async def menu_change_nickname(message: Message, state: FSMContext) -> None:
@@ -721,7 +721,7 @@ async def process_new_nickname(message: Message, state: FSMContext) -> None:
 
 
 # -----------------------------------------------------------------------------
-# US-4 и US-6: ОПРОС СОСТОЯНИЯ (1–10) И БЕРЕЖНАЯ РЕАКЦИЯ НА КРИЗИС (9–10)
+# US-4 and US-6: STATE SURVEY (1–10) AND A CAREFUL REACTION TO CRISIS (9–10)
 # -----------------------------------------------------------------------------
 @router.message(F.text == "📊 Оценить состояние (1–10)")
 async def menu_crisis_survey(message: Message) -> None:
@@ -760,7 +760,7 @@ async def cb_crisis_score(callback: CallbackQuery) -> None:
     logger.info(f"Записан ответ трекера состояния user_id={user['id']}, score={score}, critical={is_critical}")
 
     if is_critical:
-        # US-6: При выборе 9–10 выдаем согласованное с мастером бережное сообщение
+        # US-6: for scores 9–10, show the gentle message agreed with the Master
         crisis_template = get_setting("crisis_message")
         crisis_text = crisis_template.replace("{score}", str(score))
         await callback.message.edit_text(crisis_text, parse_mode="HTML")
@@ -775,7 +775,7 @@ async def cb_crisis_score(callback: CallbackQuery) -> None:
 
 
 # -----------------------------------------------------------------------------
-# US-5: ГРАФИК ДИНАМИКИ И НЕДЕЛЬНЫЙ ОТЧЁТ
+# US-5: DYNAMICS CHART AND WEEKLY REPORT
 # -----------------------------------------------------------------------------
 @router.message(F.text == "📈 Мой график и отчёт")
 async def menu_my_chart(message: Message) -> None:
@@ -839,7 +839,7 @@ async def menu_my_chart(message: Message) -> None:
 
 
 # -----------------------------------------------------------------------------
-# US-7: УДАЛЕНИЕ ВСЕХ СВОИХ ДАННЫХ (ПРАВО НА ЗАБВЕНИЕ, П. 4.2 ТЗ)
+# US-7: DELETE ALL OF THE USER'S DATA (RIGHT TO BE FORGOTTEN, SPEC SECTION 4.2)
 # -----------------------------------------------------------------------------
 @router.message(F.text == "🗑 Удалить мои данные")
 async def menu_delete_my_data(message: Message) -> None:
@@ -885,7 +885,7 @@ async def cb_cancel_delete_self(callback: CallbackQuery) -> None:
 
 
 # =============================================================================
-# 6. ПОДСИСТЕМА АДМИНИСТРАТОРА (US-8, US-9, US-10)
+# 6. ADMINISTRATOR SUBSYSTEM (US-8, US-9, US-10)
 # =============================================================================
 
 @router.message(Command("admin"))
@@ -1003,7 +1003,7 @@ async def cb_admin_logs(callback: CallbackQuery) -> None:
 
 
 # =============================================================================
-# 7. ПОДСИСТЕМА МАСТЕРА / ОСНОВАТЕЛЯ-ПСИХОЛОГА (US-11, US-12, US-13)
+# 7. MASTER / FOUNDER-PSYCHOLOGIST SUBSYSTEM (US-11, US-12, US-13)
 # =============================================================================
 
 @router.message(Command("master"))
@@ -1174,7 +1174,7 @@ async def process_master_crisis_text(message: Message, state: FSMContext) -> Non
 
 @router.callback_query(F.data == "master:analytics")
 async def cb_master_analytics(callback: CallbackQuery) -> None:
-    """US-13: Анонимная сводная аналитика по динамике кризисов для отчета перед инвесторами."""
+    """US-13: Anonymous summary analytics of crisis dynamics for the investor report."""
     with get_db_connection() as conn:
         total_logs = conn.execute("SELECT COUNT(*) as cnt FROM Crisis_Logs;").fetchone()["cnt"]
         avg_row = conn.execute("SELECT AVG(score) as avg_s FROM Crisis_Logs;").fetchone()
@@ -1204,12 +1204,12 @@ async def cb_master_analytics(callback: CallbackQuery) -> None:
 
 
 # =============================================================================
-# 8. ОСНОВНОЙ СЦЕНАРИЙ: ПРИЕМ ВЫПОЛНЕННОГО ДЕЛА, ПОХВАЛА И ВЫДАЧА PDF (US-1, US-3)
+# 8. MAIN SCENARIO: ACCEPTING A COMPLETED DEED, PRAISE AND PDF ISSUANCE (US-1, US-3)
 # =============================================================================
 
 @router.callback_query(F.data.startswith("get_pdf:"))
 async def cb_generate_pdf_certificate(callback: CallbackQuery) -> None:
-    """US-3: Генерация и отправка именного PDF-сертификата не позднее 10 секунд."""
+    """US-3: Generate and send a personalized PDF certificate within 10 seconds."""
     deed_id = int(callback.data.split(":")[1])
     await callback.answer("⏳ Формирую именной PDF-сертификат...")
 
@@ -1231,7 +1231,7 @@ async def cb_generate_pdf_certificate(callback: CallbackQuery) -> None:
             await callback.message.answer("Запись о выполненном деле не найдена.")
             return
 
-        # Проверяем, выдавался ли уже сертификат по этому делу (связь 1 : 0..1 из ER-схемы)
+        # Check whether a certificate was already issued for this deed (1 : 0..1 relation from the ER diagram)
         cert_row = conn.execute(
             "SELECT cert_number, issued_at FROM Certificates WHERE deed_id = ?;",
             (deed_id,),
@@ -1277,8 +1277,8 @@ async def cb_generate_pdf_certificate(callback: CallbackQuery) -> None:
 @router.message(F.text)
 async def handle_user_deed_message(message: Message) -> None:
     """
-    US-1: Любое обычное текстовое сообщение воспринимается как отчёт о выполненном деле
-    и мгновенно (< 3 сек) подкрепляется похвалой выбранного персонажа.
+    US-1: Any regular text message is treated as a report about a completed deed
+    and is instantly (< 3 sec) rewarded with praise from the selected character.
     """
     user = get_or_create_user(message.from_user.id, message.from_user.username)
     if check_is_blocked(user):
@@ -1300,7 +1300,7 @@ async def handle_user_deed_message(message: Message) -> None:
         ).fetchall()
 
         if not phrases:
-            # Фолбэк, если Мастер отключил все фразы
+            # Fallback in case the Master has disabled all phrases
             phrases = conn.execute(
                 "SELECT id, phrase_text FROM Phrases WHERE character_id = ?;",
                 (char["id"],),
@@ -1344,11 +1344,11 @@ async def handle_user_deed_message(message: Message) -> None:
 
 
 # =============================================================================
-# 9. ФОНОВЫЙ ПЛАНИРОВЩИК (APSCHEDULER) ДЛЯ ЕЖЕДНЕВНЫХ ОПРОСОВ ПО ТАЙМЕРУ
+# 9. BACKGROUND SCHEDULER (APSCHEDULER) FOR DAILY SURVEYS ON A TIMER
 # =============================================================================
 
 async def scheduled_daily_survey_check(bot: Bot) -> None:
-    """Каждую минуту проверяет, не наступило ли заданное Мастером время опроса."""
+    """Checks every minute whether the survey time set by the Master has come."""
     target_time = get_setting("survey_time") or "20:00"
     now_hm = datetime.now().strftime("%H:%M")
     if now_hm != target_time:
@@ -1373,7 +1373,7 @@ async def scheduled_daily_survey_check(bot: Bot) -> None:
 
 
 # =============================================================================
-# 10. ТОЧКА ВХОДА И ЗАПУСК БОТА
+# 10. ENTRY POINT AND BOT LAUNCH
 # =============================================================================
 
 async def main() -> None:
